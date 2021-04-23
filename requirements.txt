@@ -1,0 +1,4 @@
+numpy==1.16.6
+cnocr==1.2.2
+fontTools==4.22.0
+Pillow==8.2.0
