@@ -11,7 +11,7 @@ ft = FontTransfer()
 
 transfer_dict = ft.get_font_transfer_dict('../docs/land.ttf')
 print(transfer_dict)
-# print(len(transfer_dict))
+print(len(transfer_dict))
 
 t2 = time.time()
 print('总耗时:{}'.format(t2 - t1))

@@ -7,27 +7,15 @@
 @time: 2021/3/29
 @desc: 字体转换
 """
-import io
-import os
-import queue
-import math
-import shutil
-import threading
-from itertools import chain
 import copy
-import numpy
-from PIL import Image, ImageChops, ImageDraw, ImageFont
-from fontTools.ttLib import TTFont
-from fontTools.unicode import Unicode
-
-# os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # 消除tensorflow的日志输出
-# import muggle_ocr
-import cnocr
+import math
+import threading
 from concurrent.futures import ThreadPoolExecutor
 
-
-def deepcopy(origin):
-    pass
+import cnocr
+import numpy
+from PIL import Image, ImageDraw, ImageFont
+from fontTools.ttLib import TTFont
 
 
 class FontTransfer(object):
@@ -51,11 +39,15 @@ class FontTransfer(object):
         """
         从字体文件中获取字体编码、字体字型等信息
         :param font_path: 字体文件路径 str
-        :return: set
+        :return: dict
         """
-        ttf = TTFont(font_path, ignoreDecompileErrors=True)
-        chars = chain.from_iterable([y + (Unicode[y[0]],) for y in x.cmap.items()] for x in ttf["cmap"].tables)
-        return set(list(chars))
+        ttf = TTFont(font_path)
+
+        char_dict = {}
+        for k, v in ttf['cmap'].getBestCmap().items():
+            if ttf['glyf'][v].xMin:
+                char_dict[k] = v
+        return char_dict
 
     def draw_font_word(self, char_unicode, origin, board, font):
         """
@@ -75,32 +67,31 @@ class FontTransfer(object):
         :param font_path:
         :return:
         """
-        chars = self.get_chars_from_font(font_path)
+        char_dict = self.get_chars_from_font(font_path)
         # 字体能被分成多少行多少列的正方形图片
-        num = math.ceil(math.sqrt(len(chars)))
+        num = math.ceil(math.sqrt(len(char_dict)))
         # 自适应图片的大小
         image_size = num * (self.font_size + 4)
 
         font = ImageFont.truetype(font_path, self.font_size)
 
-        unicode_list = []
+        unicode_list = list(char_dict.values())
         board = Image.new('RGB', (image_size, image_size), (255, 255, 255))
 
+        # 这个算法用于确定每个字型的坐标
         origin = [0, 0]
         i = 1
         j = 1
         thread_pool = ThreadPoolExecutor(15)
-        for char in chars:
+        for k in char_dict.keys():
             origin[0] = 24 * (j - 1) + 2
             origin[1] = 24 * (i - 1) + 2
 
             if j % num == 0:
                 i += 1
                 j = 0
-            if ImageChops.invert(board).getbbox():
-                unicode_list.append(char[1])
 
-            char_unicode = chr(char[0])
+            char_unicode = chr(k)
 
             thread_pool.submit(self.draw_font_word, char_unicode, copy.copy(origin), board, font)
 
@@ -110,25 +101,9 @@ class FontTransfer(object):
         thread_pool.shutdown()
         return numpy.asarray(board), unicode_list
 
-    # def image_bytes_to_string(self):
-    #     while not self.q.empty():
-    #         img_name, img_data = self.q.get()
-    #
-    #         chinese = self.ocr.ocr_for_single_line(self.image_path + img)
-    #         self.transfer_dict[img_name] = chinese[0] if chinese else ''
-    #
-    #         self.q.task_done()
-
     def get_font_transfer_dict(self, font_path):
         img_array, unicode_list = self.font_to_image(font_path)
         string_list = []
         for res in self.ocr.ocr(img_array):
             string_list += res
-        print(unicode_list)
-        print(len(unicode_list))
-        print(string_list)
-        print(len(string_list))
-        # return dict(zip(unicode_list, string_list))
-
-
-
+        return dict(zip(unicode_list, string_list))
