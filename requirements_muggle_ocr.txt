@@ -1,0 +1,4 @@
+numpy==1.19.5
+muggle_ocr==1.0.3
+fontTools==4.22.1
+Pillow==8.2.0

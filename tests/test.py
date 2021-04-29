@@ -1,17 +1,17 @@
-import time
+import sqlite3
 
-from font_transfer import FontTransfer
 
-t1 = time.time()
+def init_db():
+    con = sqlite3.connect('../db.sqlite3')
+    cur = con.cursor()
+    cur.execute("""create table font_dict(
+                site_name varchar(255) not null,
+                font_name varchar(255) not null,
+                unicode varchar(10) not null,
+                ture_string varchar(10)
+                )""")
+    con.commit()
+    cur.close()
 
-ft = FontTransfer()
-# print(ft.get_chars_from_font('../docs/land.ttf'))
 
-# ft.font_to_image('land.ttf')
-
-transfer_dict = ft.get_font_transfer_dict('../docs/land.ttf')
-print(transfer_dict)
-print(len(transfer_dict))
-
-t2 = time.time()
-print('总耗时:{}'.format(t2 - t1))
+init_db()

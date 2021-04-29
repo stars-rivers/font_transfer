@@ -5,11 +5,11 @@
 @license: MIT
 @file: font_transfer.py
 @time: 2021/3/29
-@desc: 字体转换
+@desc: 字体转换ocr版本，将字型分割绘制在不同的图片上一张张的识别（多线程不适用）淘汰
 """
 import copy
-import math
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 import cnocr
@@ -23,8 +23,10 @@ class FontTransfer(object):
 
     def __init__(self):
         self.font_size = 20  # 字体文字的尺寸
+        self.image_size = self.font_size + 4
         self.ocr = cnocr.CnOcr()
-        self.transfer_dict = dict()
+        self.res_dict = dict()
+        self.thread_pool = ThreadPoolExecutor(15)
 
     # 线程安全的单例模式
     def __new__(cls, *args, **kwargs):
@@ -37,19 +39,14 @@ class FontTransfer(object):
 
     def get_chars_from_font(self, font_path):
         """
-        从字体文件中获取字体编码、字体字型等信息
+        从字体文件中获取字体编码、字体字型等信息，过滤掉空白的字型编码
         :param font_path: 字体文件路径 str
         :return: dict
         """
         ttf = TTFont(font_path)
+        return {k: v for k, v in ttf['cmap'].getBestCmap().items() if ttf['glyf'][v].xMax}
 
-        char_dict = {}
-        for k, v in ttf['cmap'].getBestCmap().items():
-            if ttf['glyf'][v].xMin:
-                char_dict[k] = v
-        return char_dict
-
-    def draw_font_word(self, char_unicode, origin, board, font):
+    def draw_font_word(self, char_unicode, font, v):
         """
         在画板上画出字体文件中的字型
         :param char_unicode: unicode编码字符串 str
@@ -58,8 +55,20 @@ class FontTransfer(object):
         :param font: 字型对象
         :return: None
         """
+        board = Image.new('RGB', (self.image_size, self.image_size), (255, 255, 255))
         draw = ImageDraw.ImageDraw(board)
+
+        # 自适应字型在图片中保持居中
+        center_background = (self.image_size / 2, self.image_size / 2)
+        size = draw.textsize(char_unicode, font=font)
+        origin = [center_background[0] - size[0] / 2, center_background[1] - size[1] / 2]
+
         draw.text(tuple(origin), char_unicode, font=font, fill=0)
+
+        # board.save(f"./img/{v}.png")
+        ndarry = numpy.asarray(board)
+        res = self.ocr.ocr_for_single_line(copy.deepcopy(ndarry))
+        self.res_dict[v] = res[0] if res else ''
 
     def font_to_image(self, font_path):
         """
@@ -68,42 +77,21 @@ class FontTransfer(object):
         :return:
         """
         char_dict = self.get_chars_from_font(font_path)
-        # 字体能被分成多少行多少列的正方形图片
-        num = math.ceil(math.sqrt(len(char_dict)))
-        # 自适应图片的大小
-        image_size = num * (self.font_size + 4)
 
         font = ImageFont.truetype(font_path, self.font_size)
 
-        unicode_list = list(char_dict.values())
-        board = Image.new('RGB', (image_size, image_size), (255, 255, 255))
-
-        # 这个算法用于确定每个字型的坐标
-        origin = [0, 0]
-        i = 1
-        j = 1
-        thread_pool = ThreadPoolExecutor(15)
-        for k in char_dict.keys():
-            origin[0] = 24 * (j - 1) + 2
-            origin[1] = 24 * (i - 1) + 2
-
-            if j % num == 0:
-                i += 1
-                j = 0
-
+        for k, v in char_dict.items():
             char_unicode = chr(k)
+            self.thread_pool.submit(self.draw_font_word, char_unicode, font, v)
 
-            thread_pool.submit(self.draw_font_word, char_unicode, copy.copy(origin), board, font)
+        self.thread_pool.shutdown()
+        return self.res_dict
 
-            j += 1
-        # print(unicode_list)
-        # board.save("res.png")
-        thread_pool.shutdown()
-        return numpy.asarray(board), unicode_list
 
-    def get_font_transfer_dict(self, font_path):
-        img_array, unicode_list = self.font_to_image(font_path)
-        string_list = []
-        for res in self.ocr.ocr(img_array):
-            string_list += res
-        return dict(zip(unicode_list, string_list))
+if __name__ == '__main__':
+    ft = FontTransfer()
+    t = time.time()
+    res_dict = ft.font_to_image('../font/land.ttf')
+    print('haha', res_dict)
+    print(len(res_dict))
+    print(time.time() - t)
